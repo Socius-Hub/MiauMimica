@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MiauMímica</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <style>
+    body { 
+      display: flex; justify-content: center; align-items: center; height: 100vh; 
+      background: radial-gradient(circle, #a8edea 0%, #fed6e3 100%); 
+      margin: 0; overflow: hidden; font-family: 'Nunito', sans-serif; 
+    }
+    .app-container { position: relative; width: 800px; height: 600px; }
+    canvas { 
+      position: absolute; top: 0; left: 0; 
+      border: 8px solid #fff; border-radius: 24px; transform: scaleX(-1); 
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15); background-color: #e0f7fa; box-sizing: border-box; 
+    }
+    #ui { 
+      position: absolute; top: 20px; left: 0; width: 100%; box-sizing: border-box; 
+      color: white; pointer-events: none; z-index: 10; display: flex; 
+      flex-direction: column; justify-content: flex-start; align-items: center; gap: 12px; 
+    }
+    .info-box { 
+      font-size: 18px; background: #ff6b81; padding: 12px 30px; 
+      border-radius: 35px; border: 4px solid #fff; text-align: center; 
+      box-shadow: 0 5px 0px #ff4757, 0 8px 10px rgba(0,0,0,0.2); 
+      text-transform: uppercase; letter-spacing: 1px;
+    }
+    .highlight { 
+      color: #feca57; font-weight: 900; font-size: 32px; letter-spacing: 1.5px; 
+      display: block; margin-top: 5px; text-shadow: 2px 2px 0px #ff4757; 
+    }
+    #progress-container { 
+      width: 280px; height: 28px; background: #fff; border-radius: 20px; 
+      overflow: hidden; border: 4px solid #1dd1a1; box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
+    }
+    #progress-bar { 
+      width: 0%; height: 100%; background: #1dd1a1; transition: width 0.1s linear; 
+    }
+    .mascot-container { 
+      position: absolute; top: 30px; right: 30px; width: 180px; height: 180px; 
+      background: #fff; border: 6px solid #48dbfb; border-radius: 20px; 
+      display: flex; align-items: center; justify-content: center; overflow: hidden; 
+      box-shadow: 0 8px 0px #0abde3, 0 15px 20px rgba(0,0,0,0.15); 
+      animation: float 3s ease-in-out infinite; z-index: 20; box-sizing: border-box;
+    }
+    @keyframes float {
+      0% { transform: translateY(0px); }
+      50% { transform: translateY(15px); }
+      100% { transform: translateY(0px); }
+    }
+    #mascot-img { width: 100%; height: 100%; object-fit: contain; z-index: 2; display: block; }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <video class="input_video" style="display:none;"></video>
+    <canvas class="output_canvas" width="800" height="600"></canvas>
+    
+    <div class="mascot-container">
+      <img id="mascot-img" src="" alt="">
+    </div>
+
+    <div id="ui">
+      <div class="info-box">IMITE A POSE:<span id="target-pose" class="highlight"></span></div>
+      <div id="progress-container"><div id="progress-bar"></div></div>
+    </div>
+  </div>
+
+  <script>
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const ctx = canvasElement.getContext('2d');
+    const targetPoseElement = document.getElementById('target-pose');
+    const progressBarElement = document.getElementById('progress-bar');
+    const mascotImg = document.getElementById('mascot-img');
+
+    let holdFrames = 0;
+    const requiredFrames = 45;
+    
+    const poses = [
+      { name: "MÃO ABERTA", img: "Mao_1.png" },
+      { name: "PUNHO FECHADO", img: "Mao_2.png" },
+      { name: "PINÇA", img: "Mao_3.png" },
+      { name: "APONTAR", img: "Mao_4.png" },
+      { name: "SINAL DA PAZ", img: "Mao_5.png" },
+      { name: "CHIFRES", img: "Mao_6.png" },
+      { name: "JOINHA", img: "Mao_7.png" }
+    ];
+    let currentPoseIndex = 0;
+
+    mascotImg.onerror = function() {
+      this.style.visibility = 'hidden';
+    };
+
+    mascotImg.onload = function() {
+      this.style.visibility = 'visible';
+    };
+
+    function getDist(p1, p2) {
+      return Math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2);
+    }
+
+    function checkPose(landmarks, poseName) {
+      const d0_4 = getDist(landmarks[0], landmarks[4]);
+      const d0_2 = getDist(landmarks[0], landmarks[2]);
+      const d0_8 = getDist(landmarks[0], landmarks[8]);
+      const d0_6 = getDist(landmarks[0], landmarks[6]);
+      const d0_12 = getDist(landmarks[0], landmarks[12]);
+      const d0_10 = getDist(landmarks[0], landmarks[10]);
+      const d0_16 = getDist(landmarks[0], landmarks[16]);
+      const d0_14 = getDist(landmarks[0], landmarks[14]);
+      const d0_20 = getDist(landmarks[0], landmarks[20]);
+      const d0_18 = getDist(landmarks[0], landmarks[18]);
+
+      const tUp = d0_4 > d0_2;
+      const iUp = d0_8 > d0_6;
+      const mUp = d0_12 > d0_10;
+      const rUp = d0_16 > d0_14;
+      const pUp = d0_20 > d0_18;
+
+      if (poseName === "MÃO ABERTA") return iUp && mUp && rUp && pUp;
+      if (poseName === "PUNHO FECHADO") return !iUp && !mUp && !rUp && !pUp;
+      if (poseName === "PINÇA") return getDist(landmarks[4], landmarks[8]) < 0.08 && !mUp && !rUp && !pUp;
+      if (poseName === "APONTAR") return iUp && !mUp && !rUp && !pUp;
+      if (poseName === "SINAL DA PAZ") return iUp && mUp && !rUp && !pUp;
+      if (poseName === "CHIFRES") return iUp && !mUp && !rUp && pUp;
+      if (poseName === "JOINHA") return !iUp && !mUp && !rUp && !pUp && getDist(landmarks[4], landmarks[9]) > 0.25;
+      
+      return false;
+    }
+
+    function nextPose() {
+      let newIndex = currentPoseIndex;
+      while(newIndex === currentPoseIndex) {
+        newIndex = Math.floor(Math.random() * poses.length);
+      }
+      currentPoseIndex = newIndex;
+      targetPoseElement.innerText = poses[currentPoseIndex].name;
+      mascotImg.src = poses[currentPoseIndex].img;
+      holdFrames = 0;
+      progressBarElement.style.width = '0%';
+    }
+
+    targetPoseElement.innerText = poses[currentPoseIndex].name;
+    mascotImg.src = poses[currentPoseIndex].img;
+
+    function onResults(results) {
+      ctx.save();
+      ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+        drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {color: '#feca57', lineWidth: 8});
+        drawLandmarks(ctx, landmarks, {color: '#ff6b81', lineWidth: 4, radius: 8});
+
+        if (checkPose(landmarks, poses[currentPoseIndex].name)) {
+          holdFrames++;
+          let progress = (holdFrames / requiredFrames) * 100;
+          progressBarElement.style.width = Math.min(progress, 100) + '%';
+          progressBarElement.style.background = '#1dd1a1';
+
+          if (holdFrames >= requiredFrames) {
+            nextPose();
+          }
+        } else {
+          holdFrames = Math.max(0, holdFrames - 1.5);
+          progressBarElement.style.width = ((holdFrames / requiredFrames) * 100) + '%';
+          progressBarElement.style.background = '#ff6b81';
+        }
+      } else {
+         holdFrames = Math.max(0, holdFrames - 2);
+         progressBarElement.style.width = ((holdFrames / requiredFrames) * 100) + '%';
+         progressBarElement.style.background = '#ff6b81';
+      }
+      ctx.restore();
+    }
+
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+    hands.onResults(onResults);
+    const camera = new Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width: 800, height: 600 });
+    camera.start();
+  </script>
+</body>
+</html>
